@@ -1,0 +1,17 @@
+# Zincati update strategy for media-server.
+#
+# Use the "periodic" strategy so OS updates (fetch + stage + reboot) only
+# happen inside our declared maintenance window: Tuesdays 04:00-06:00 local
+# time. This lines up with podman-auto-update.timer (Tue 04:00 local) and
+# bootc-upgrade.service/.timer (Tue 04:30 local) so all update mechanisms
+# are contained to the same window.
+[updates]
+strategy = "periodic"
+
+[updates.periodic]
+time_zone = "localtime"
+
+[[updates.periodic.window]]
+days = ["Tue"]
+start_time = "04:00"
+length_minutes = 120

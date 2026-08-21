@@ -1,0 +1,72 @@
+name: Build media-server image
+
+# Rebuilds and pushes ghcr.io/fbunt/media-server on every change to main, plus
+# a weekly refresh so hosts have a fresh image to pull before the Tuesday
+# 04:00-06:00 local maintenance window (Zincati periodic strategy / the
+# podman-auto-update.timer and bootc-upgrade.timer both fire at/after 04:00
+# local Tuesday). The schedule below runs Tuesday 08:00 UTC, which is ahead
+# of local Tuesday morning for any timezone west of UTC (US/EU); adjust the
+# cron if the host's local timezone would put 04:00 local before 08:00 UTC.
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+  schedule:
+    # Tuesday 08:00 UTC - before the Tue 04:00-06:00 local maintenance window.
+    - cron: '0 8 * * 2'
+  workflow_dispatch: {}
+
+concurrency:
+  group: build-media-server-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMAGE_NAME: media-server
+  IMAGE_REGISTRY: ghcr.io/fbunt
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    name: Build and push image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set image tags
+        id: tags
+        run: |
+          echo "date_tag=$(date -u +%Y%m%d)" >> "$GITHUB_OUTPUT"
+          echo "sha_tag=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Build image
+        id: build_image
+        uses: redhat-actions/buildah-build@v2
+        with:
+          image: ${{ env.IMAGE_NAME }}
+          tags: latest ${{ steps.tags.outputs.date_tag }} ${{ steps.tags.outputs.sha_tag }}
+          containerfiles: |
+            ./Containerfile
+          oci: true
+
+      - name: Log in to ghcr.io
+        uses: redhat-actions/podman-login@v1
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Signing (e.g. cosign sign --keyless) would slot in here, after push,
+      # signing each pushed tag/digest. Skipped for now.
+
+      - name: Push image
+        id: push_image
+        uses: redhat-actions/push-to-registry@v2
+        with:
+          image: ${{ steps.build_image.outputs.image }}
+          tags: ${{ steps.build_image.outputs.tags }}
+          registry: ${{ env.IMAGE_REGISTRY }}

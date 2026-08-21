@@ -1,0 +1,43 @@
+[Unit]
+Description=Tdarr Server (transcode automation)
+Documentation=https://docs.tdarr.io/
+Wants=network-online.target
+After=network-online.target
+# See plex.container for why this is After only, never Requires/Wants: the
+# NAS may not exist yet and the unit must still start (and simply have an
+# empty/inaccessible /media until the mount shows up).
+After=var-mnt-media.mount
+
+[Container]
+Image=ghcr.io/haveagitgat/tdarr:latest
+ContainerName=tdarr-server
+# Shared network so tdarr-node can reach this container by name (netavark DNS).
+Network=tdarr.network
+PublishPort=8265:8265
+PublishPort=8266:8266
+
+Environment=TZ=America/Denver
+Environment=serverIP=0.0.0.0
+Environment=serverPort=8266
+Environment=webUIPort=8265
+# This is the Tdarr server -- it does not run transcode workers itself.
+Environment=internalNode=false
+
+Volume=/var/srv/tdarr/server:/app/server:Z
+Volume=/var/srv/tdarr/configs:/app/configs:Z
+Volume=/var/srv/tdarr/logs:/app/logs:Z
+# Transcode working/cache directory, shared with tdarr-node (path as seen
+# from the server's perspective, must match the node's /temp mount below).
+Volume=/var/srv/tdarr/cache:/temp:Z
+
+# NFS media: read-only, no :Z (see plex.container comment for why).
+Volume=/var/mnt/media:/media:ro
+
+AutoUpdate=registry
+
+[Service]
+Restart=on-failure
+TimeoutStartSec=900
+
+[Install]
+WantedBy=multi-user.target

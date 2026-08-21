@@ -1,0 +1,13 @@
+[Unit]
+Description=bootc upgrade (pull + stage latest image)
+Documentation=man:bootc(8)
+# Don't fight with a manual/rpm-ostree-driven update in progress.
+ConditionPathExists=/run/ostree-booted
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/bootc upgrade --quiet
+# Keep noise down; this runs unattended in the maintenance window.
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7

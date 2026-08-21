@@ -1,0 +1,11 @@
+[Unit]
+Description=Restic backup of /var/srv and /etc/mediaserver to Backblaze B2
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/etc/mediaserver/restic.env
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/mediaserver/restic-backup.sh
+Nice=10
+IOSchedulingClass=idle

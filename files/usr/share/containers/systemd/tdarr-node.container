@@ -1,0 +1,49 @@
+[Unit]
+Description=Tdarr Node (transcode worker, QSV-enabled)
+Documentation=https://docs.tdarr.io/
+Wants=network-online.target
+After=network-online.target
+# Wait for the server unit to be up first (best-effort ordering; node will
+# retry connecting to serverIP:serverPort if the server isn't ready yet).
+After=tdarr.service
+# See plex.container for why After-only (no Requires/Wants) on the NFS mount.
+After=var-mnt-media.mount
+
+[Container]
+Image=ghcr.io/haveagitgat/tdarr_node:latest
+ContainerName=tdarr-node
+# Shared network with the server; serverIP below is the server's
+# ContainerName, resolved via netavark DNS on this network.
+Network=tdarr.network
+
+# Intel UHD 630 QSV passthrough for hardware transcoding.
+AddDevice=/dev/dri:/dev/dri
+# Supplemental render-group access for /dev/dri/renderD128. Numeric GID
+# because group *names* are resolved against the container image, not the
+# host. 105 is Fedora's usual "render" GID -- verify on the host with
+# `getent group render` and adjust if it differs.
+GroupAdd=105
+
+Environment=TZ=America/Denver
+Environment=nodeName=optiplex-node1
+Environment=serverIP=tdarr-server
+Environment=serverPort=8266
+Environment=inContainer=true
+
+# Must match the server's cache/temp volume exactly so both containers see
+# the same working files during a transcode job.
+Volume=/var/srv/tdarr/cache:/temp:Z
+Volume=/var/srv/tdarr/configs:/app/configs:Z
+Volume=/var/srv/tdarr/logs:/app/logs:Z
+
+# NFS media: read-only, no :Z (see plex.container comment for why).
+Volume=/var/mnt/media:/media:ro
+
+AutoUpdate=registry
+
+[Service]
+Restart=on-failure
+TimeoutStartSec=900
+
+[Install]
+WantedBy=multi-user.target

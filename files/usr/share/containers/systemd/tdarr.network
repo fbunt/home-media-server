@@ -1,0 +1,9 @@
+[Unit]
+Description=Shared network for Tdarr server and node
+
+# A dedicated netavark network gives the two Tdarr containers DNS-resolvable
+# container names (serverIP=tdarr-server in tdarr-node.container). The default
+# podman network has no DNS, and 127.0.0.1 would only reach the container's
+# own network namespace.
+[Network]
+NetworkName=tdarr

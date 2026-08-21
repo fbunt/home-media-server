@@ -1,0 +1,49 @@
+[Unit]
+Description=Scrutiny (S.M.A.R.T. disk monitoring, omnibus)
+Documentation=https://github.com/AnalogJ/scrutiny
+Wants=network-online.target
+After=network-online.target
+
+[Container]
+Image=ghcr.io/analogj/scrutiny:master-omnibus
+ContainerName=scrutiny
+PublishPort=8080:8080
+
+Volume=/var/srv/scrutiny:/opt/scrutiny/config:Z
+# udev metadata needed for scrutiny's collector to identify disks; read-only,
+# and not :Z since it's a bind mount of a live host runtime directory.
+Volume=/run/udev:/run/udev:ro
+
+# SYS_RAWIO is required for the smartctl-based collector to issue ATA/SCSI
+# passthrough SMART commands against the block devices below.
+AddCapability=SYS_RAWIO
+# SYS_ADMIN is only needed if the collector has to probe NVMe devices via
+# ioctl paths that SYS_RAWIO alone doesn't cover on this kernel; drop it if
+# your NVMe SMART data comes through fine without it.
+AddCapability=SYS_ADMIN
+
+# Disk devices to pass through -- these are placeholders, adjust to match
+# the actual /dev entries on this host (check with `lsblk` / `ls /dev/disk/by-id`).
+AddDevice=/dev/sda
+AddDevice=/dev/sdb
+AddDevice=/dev/nvme0
+
+# Not enabled: disabling SELinux confinement for this container would avoid
+# any device-relabeling friction, but it trades away the container's SELinux
+# separation from the rest of the host for a convenience that AddDevice above
+# should already provide. Only flip this on if SMART reads still fail with
+# AVC denials after confirming the AddDevice lines are correct.
+# SecurityLabelDisable=true
+
+# Notification webhook (shoutrrr URL, e.g. ntfy) is optional and loaded only
+# if present, so a fresh clone/boot doesn't fail this unit.
+EnvironmentFile=-/etc/mediaserver/scrutiny-notify.env
+
+AutoUpdate=registry
+
+[Service]
+Restart=on-failure
+TimeoutStartSec=900
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,16 @@
+[Unit]
+Description=Weekly bootc upgrade, inside the Tuesday maintenance window
+
+[Timer]
+# Maintenance window is Tue 04:00-06:00 local. Start bootc-upgrade 30 min
+# into the window (after Zincati/podman-auto-update have had a chance to
+# settle at 04:00) and jitter by up to 10 min so it doesn't collide with
+# other window-start work to the second.
+OnCalendar=Tue *-*-* 04:30:00
+RandomizedDelaySec=10m
+# This must only ever run inside its declared window -- if the box was off
+# at 04:30 Tuesday, do NOT fire it late/out-of-window on next boot.
+Persistent=false
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,49 @@
+[Unit]
+Description=Plex Media Server
+Documentation=https://hub.docker.com/r/plexinc/pms-docker
+Wants=network-online.target
+After=network-online.target
+# NFS media mount: After only (not Requires/Wants=mount) so Plex still starts
+# and comes up (with /media empty) even if the NAS is unreachable or not yet
+# provisioned. Once the mount appears, systemd path/automount ordering means
+# Plex simply sees the directory populate; no restart needed for NFS itself.
+After=var-mnt-media.mount
+
+[Container]
+Image=docker.io/plexinc/pms-docker:latest
+ContainerName=plex
+# Host networking is required for Plex GDM discovery (client auto-discovery,
+# DLNA, etc.) to work correctly on the LAN.
+Network=host
+
+# Intel UHD 630 QSV passthrough for hardware transcoding.
+AddDevice=/dev/dri:/dev/dri
+# Rootful podman: the container's plex user needs supplemental access to the
+# host's render group to use /dev/dri/renderD128. Use the numeric GID because
+# group *names* are resolved against the container image's /etc/group, not the
+# host's. 105 is Fedora's usual "render" GID -- verify on the host with
+# `getent group render` and adjust if it differs.
+GroupAdd=105
+
+# Local app state/config: SELinux relabel is safe and required here.
+Volume=/var/srv/plex:/config:Z
+# NFS media: read-only, and NEVER labeled :Z -- NFS filesystems cannot be
+# relabeled by SELinux. Access is instead granted host-wide via:
+#   setsebool -P virt_use_nfs on
+Volume=/var/mnt/media:/media:ro
+
+Environment=TZ=America/Denver
+# PLEX_CLAIM=claim-xxxxxxxxxxxxxxxxxxxx (get a fresh token from
+# https://plex.tv/claim, valid for 4 minutes) is supplied via the env file
+# below, NOT hardcoded here. The file is optional at boot: EnvironmentFile=-
+# tolerates it being absent so a fresh clone/boot doesn't fail units.
+EnvironmentFile=-/etc/mediaserver/plex.env
+
+AutoUpdate=registry
+
+[Service]
+Restart=on-failure
+TimeoutStartSec=900
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,16 @@
+[Unit]
+Description=Send an ntfy notification once boot is confirmed healthy
+After=network-online.target greenboot-healthcheck.service
+Wants=network-online.target
+# greenboot-healthcheck.service only reaches "success" state after all
+# required.d checks (including our 50-plex-health.sh) pass, so ordering
+# after it is what makes this a genuine "booted, updated and healthy"
+# signal rather than just "booted".
+Requires=greenboot-healthcheck.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/mediaserver/ntfy-boot-notify.sh
+
+[Install]
+WantedBy=multi-user.target

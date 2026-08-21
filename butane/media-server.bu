@@ -1,0 +1,109 @@
+variant: fcos
+version: 1.5.0
+# NOTE: 1.5.0 is used because it is confirmed valid for the fcos variant.
+# Bump to a newer spec version once confirmed supported by the installed
+# `butane` binary (check with `butane --version` / release notes).
+
+passwd:
+  users:
+    - name: core
+      ssh_authorized_keys:
+        # REPLACE with the real deploying operator's public key before use.
+        - "ssh-ed25519 AAAA...REPLACE_ME fred@somewhere"
+
+storage:
+  files:
+    - path: /etc/hostname
+      mode: 0644
+      overwrite: true
+      contents:
+        inline: |
+          media-server
+
+  directories:
+    - path: /var/srv/plex
+      mode: 0755
+    - path: /var/srv/tdarr
+      mode: 0755
+    - path: /var/srv/uptime-kuma
+      mode: 0755
+    - path: /var/srv/scrutiny
+      mode: 0755
+    - path: /etc/mediaserver
+      mode: 0755
+
+systemd:
+  units:
+    # ------------------------------------------------------------------
+    # NFS media mount
+    # ------------------------------------------------------------------
+    # Placeholder NAS source; replace nas.local:/volume1/media once the
+    # UGREEN DXP2800 is provisioned and its real hostname/export is known.
+    # `nofail` (a mount-unit option, not a systemd unit directive) keeps
+    # boot from blocking/failing if the NFS server is unreachable; it is
+    # set here via the mount unit's Options=, not [Unit] directives.
+    - name: var-mnt-media.mount
+      enabled: true
+      contents: |
+        [Unit]
+        Description=NFS mount for media library
+        After=network-online.target
+        Wants=network-online.target
+
+        [Mount]
+        What=nas.local:/volume1/media
+        Where=/var/mnt/media
+        Type=nfs4
+        Options=rw,noatime,nofail,x-systemd.mount-timeout=10,_netdev
+
+        [Install]
+        WantedBy=multi-user.target
+
+    # ------------------------------------------------------------------
+    # podman-auto-update: enable it, and override its default schedule
+    # to align with the Tuesday 04:00-06:00 local maintenance window.
+    # ------------------------------------------------------------------
+    - name: podman-auto-update.timer
+      enabled: true
+      dropins:
+        - name: 55-schedule.conf
+          contents: |
+            [Timer]
+            # Reset the upstream OnCalendar= before setting ours, since
+            # OnCalendar= directives are additive otherwise.
+            OnCalendar=
+            OnCalendar=Tue *-*-* 04:00
+            Persistent=false
+
+    # ------------------------------------------------------------------
+    # ucore-style firstboot autorebase, in two stages:
+    #   1. Rebase to the unsigned (unverified-registry) media-server image
+    #      and reboot into it.
+    #   2. Once running the target image, optionally re-rebase to the
+    #      image-signed transport once signing is configured. Left as an
+    #      unverified rebase with the follow-up commented, matching the
+    #      simplest ublue-os/ucore documented firstboot pattern.
+    # ------------------------------------------------------------------
+    - name: ucore-autorebase.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=ucore-autorebase: rebase to custom media-server image on first boot
+        # Only meaningful before the custom image has taken over.
+        ConditionPathExists=!/etc/ucore-autorebase-done
+        Wants=network-online.target
+        After=network-online.target
+
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+        # Unverified-registry rebase: no image signature verification.
+        # Swap for ostree-image-signed:docker://... once cosign/sigstore
+        # verification is set up for ghcr.io/fbunt/media-server, e.g.:
+        #   ExecStart=/usr/bin/rpm-ostree rebase ostree-image-signed:docker://ghcr.io/fbunt/media-server:latest
+        ExecStart=/usr/bin/rpm-ostree rebase ostree-unverified-registry:ghcr.io/fbunt/media-server:latest
+        ExecStart=/usr/bin/touch /etc/ucore-autorebase-done
+        ExecStart=/usr/bin/systemctl --no-block reboot
+
+        [Install]
+        WantedBy=multi-user.target
