@@ -9,14 +9,14 @@ A [bootc](https://containers.github.io/bootc/) image for my home media server: P
 
 ## Base image and update strategy
 
-Built `FROM ghcr.io/ublue-os/ucore:stable`. Tailscale ships with ucore already; it's left disabled/unconfigured in the image and is enabled interactively post-install (`tailscale up`), never baked in with a key.
+Built `FROM ghcr.io/ublue-os/ucore:stable`. Tailscale and distrobox ship with ucore already (the Containerfile guards both, installing them only if a future base drops them); tailscaled is left disabled/unconfigured in the image and is enabled interactively post-install (`tailscale up`), never baked in with a key. greenboot is *not* part of ucore, so the Containerfile installs `greenboot` + `greenboot-default-health-checks` from the Fedora repos.
 
 Everything updates inside one **Tuesday 04:00–06:00 local** maintenance window:
 
 | Mechanism | Schedule | Role |
 |---|---|---|
 | `podman-auto-update.timer` | Tue 04:00 local | Pulls fresh `:latest`/`:registry`-tagged container images for all Quadlets (`AutoUpdate=registry` label on each) |
-| `bootc-upgrade.timer` → `bootc-upgrade.service` | Tue 04:30 local (10 min jitter) | `bootc upgrade --quiet`, pulls/stages the next `ghcr.io/fbunt/media-server` build |
+| `bootc-upgrade.timer` → `bootc-upgrade.service` | Tue 04:30 local (10 min jitter) | `bootc upgrade --quiet --apply`: pulls the next `ghcr.io/fbunt/media-server` build and reboots into it — but only when an update was actually staged |
 | Zincati (`files/etc/zincati/config.d/55-updates-strategy.toml`) | `periodic` strategy, window Tue 04:00, 120 min, `time_zone = "localtime"` | See caveat below |
 
 **Zincati caveat:** Zincati manages updates against *Fedora CoreOS's* own update graph (Cincinnati). Once the host is rebased onto a custom bootc image (`ghcr.io/fbunt/media-server`), it's no longer tracking the FCOS stream it was designed for, so Zincati effectively goes inert — it has nothing matching to check against. The config in this repo is kept anyway (harmless, keeps the window declaration in one canonical place, and matters if this ever reverts to a stock FCOS stream), but **`bootc-upgrade.timer` is the thing actually driving OS updates** post-rebase. Don't rely on Zincati logs to tell you the host is updating; check `bootc status` or the ntfy boot notification instead.
@@ -27,7 +27,7 @@ The GitHub Actions build (`.github/workflows/build.yml`) also runs Tuesday 08:00
 
 | Path | Purpose |
 |---|---|
-| `Containerfile` | Builds the image: guards for tailscale, `COPY files/ /`, chmods scripts, enables timers/services, `bootc container lint` |
+| `Containerfile` | Builds the image: guards for tailscale/distrobox, installs greenboot, `COPY files/ /`, chmods scripts, enables timers/services, `bootc container lint` |
 | `butane/media-server.bu` | Ignition source: SSH key, hostname, `/var/srv/*` + `/etc/mediaserver` dirs, NFS mount unit, `podman-auto-update.timer` schedule override, firstboot autorebase |
 | `butane/README.md` | How to compile `.bu` → `.ign` |
 | `files/usr/share/containers/systemd/*.container` | Quadlets: `plex`, `tdarr`, `tdarr-node`, `uptime-kuma`, `scrutiny` |
@@ -120,6 +120,8 @@ Two independent rollback layers:
 - **greenboot auto-rollback**: `50-plex-health.sh` is a *required* greenboot check. If `plex.service` never answers `http://localhost:32400/identity` within 180s after boot, the check fails, greenboot marks the boot unhealthy, and on a subsequent boot greenboot's own rollback logic triggers an automatic `rpm-ostree rollback` + reboot back to the prior deployment — no manual intervention needed for that failure mode. Two escape hatches keep a fresh install out of a rollback loop: if `plex.service` doesn't exist the check skips, and if it is still `activating` when time runs out (first boot pulling the Plex image can take a while) the check passes rather than failing the boot over a slow pull.
 
 The two layers compose: greenboot handles the "new image boots but is broken" case automatically; the manual `bootc rollback` / pinning commands are for everything else (bad config change, wanting to go back further than one deployment, etc).
+
+> **Verify greenboot on first install.** greenboot comes from the Fedora repos, not ucore, and its *automatic* rollback depends on the GRUB `boot_counter`/`boot_success` grubenv integration (a Fedora IoT convention) working on this CoreOS-lineage host. After the first boot, confirm with `systemctl status greenboot-healthcheck.service` and `sudo grub2-editenv list` (expect `boot_success=1` after a healthy boot). If the grubenv variables never appear, the health *checks* still run and report, but unattended rollback won't trigger — worth knowing before trusting Tuesday updates unattended.
 
 ## Backups
 

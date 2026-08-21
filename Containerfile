@@ -9,20 +9,29 @@
 #
 FROM ghcr.io/ublue-os/ucore:stable
 
-# ucore:stable already ships Tailscale (tailscaled + tailscale CLI), so no
-# package install is needed here. We deliberately leave tailscaled disabled
-# and unconfigured in the image -- it is enabled and authed interactively by
-# the operator after first boot (tailscale up), not baked in.
+# ucore:stable already ships Tailscale (tailscaled + tailscale CLI) and
+# distrobox, so no package install is needed for either. We deliberately
+# leave tailscaled disabled and unconfigured in the image -- it is enabled
+# and authed interactively by the operator after first boot (tailscale up),
+# not baked in.
 #
 # The guard below keeps this Containerfile honest: if a future ucore base
-# drops tailscale, the build fails loudly instead of silently shipping an
-# image without it.
-RUN if ! rpm -q tailscale >/dev/null 2>&1; then \
-        echo "tailscale not found in base image, installing" >&2; \
-        rpm-ostree install -y tailscale; \
-    else \
-        echo "tailscale already present in base image (ucore:stable)"; \
-    fi
+# drops either package, the build installs it (or fails loudly) instead of
+# silently shipping an image without it.
+RUN for pkg in tailscale distrobox; do \
+        if ! rpm -q "$pkg" >/dev/null 2>&1; then \
+            echo "$pkg not found in base image, installing" >&2; \
+            rpm-ostree install -y "$pkg"; \
+        else \
+            echo "$pkg already present in base image (ucore:stable)"; \
+        fi; \
+    done
+
+# greenboot is NOT in ucore (it's a Fedora IoT/RHEL component), but our boot
+# health check and auto-rollback story depend on it, so install it from the
+# Fedora repos. greenboot-default-health-checks adds upstream's baseline
+# checks alongside our required.d/50-plex-health.sh.
+RUN rpm-ostree install -y greenboot greenboot-default-health-checks
 
 # Payload: Quadlets, systemd units, greenboot checks, scripts, Zincati
 # config, and env-file examples. Mirrors the target filesystem layout.
@@ -33,8 +42,9 @@ COPY files/ /
 RUN chmod 0755 /usr/libexec/mediaserver/*.sh
 
 # Enable the timers/services that should be running from first boot:
-#   - bootc-upgrade.timer      : weekly bootc upgrade inside the maintenance
-#                                window (Tue 04:30 local), see its .timer.
+#   - bootc-upgrade.timer      : weekly bootc upgrade --apply inside the
+#                                maintenance window (Tue 04:30 local);
+#                                reboots only when an update was staged.
 #   - restic-backup.timer      : daily config/state backups to B2 (03:00).
 #   - ntfy-boot-notify.service : one-shot boot/health notification, gated on
 #                                greenboot so it only fires after a healthy
@@ -49,6 +59,7 @@ RUN systemctl enable \
         bootc-upgrade.timer \
         restic-backup.timer \
         ntfy-boot-notify.service \
+        greenboot-healthcheck.service \
         podman.socket
 
 # Lint the resulting bootc image if the base ships `bootc container lint`.

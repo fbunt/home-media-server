@@ -1,12 +1,16 @@
 [Unit]
-Description=bootc upgrade (pull + stage latest image)
+Description=bootc upgrade (pull, stage, and apply latest image)
 Documentation=man:bootc(8)
 # Don't fight with a manual/rpm-ostree-driven update in progress.
 ConditionPathExists=/run/ostree-booted
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/bootc upgrade --quiet
+# --apply reboots into the new deployment, but ONLY when an update was
+# actually staged; a no-op check exits quietly. Without it updates would
+# stage every Tuesday and never be booted into (Zincati, which handles
+# reboots on stock FCOS, is inert on a custom bootc image).
+ExecStart=/usr/bin/bootc upgrade --quiet --apply
 # Keep noise down; this runs unattended in the maintenance window.
 Nice=10
 IOSchedulingClass=best-effort
