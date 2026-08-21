@@ -1,5 +1,7 @@
 *.env
 !*.env.example
 *.ign
+*.iso
+build/
 .DS_Store
 secrets/

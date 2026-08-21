@@ -49,15 +49,26 @@ Edit `butane/media-server.bu` first:
 Then compile:
 
 ```
-cd butane
-butane --pretty --strict media-server.bu -o media-server.ign
+make ign        # runs butane in a container -> build/media-server.ign
 ```
 
-`*.ign` files are gitignored — a compiled Ignition config embeds whatever secrets/keys you substituted in, so it must never be committed.
+(or run `butane --pretty --strict` yourself if you have it installed). The Makefile refuses to compile while the `REPLACE_ME` placeholder is still in the file. `*.ign` files and `build/` are gitignored — a compiled Ignition config embeds whatever secrets/keys you substituted in, so it must never be committed.
 
 ### 2. Provision via CoreOS installer / ucore flow
 
-Boot the Fedora CoreOS (or ucore) installer against the OptiPlex and feed it `media-server.ign` as the Ignition config, following the standard `coreos-installer install --ignition-file media-server.ign ...` flow (or the ucore ISO's equivalent prompt for an Ignition/Butane config). This gets the box to a stock ucore boot with our storage layout, NFS mount unit, and firstboot autorebase unit already in place.
+**Option A — turnkey USB stick (recommended):**
+
+```
+make iso                            # default install target disk: /dev/sda
+make iso DEST_DEVICE=/dev/nvme0n1   # if the OptiPlex boot disk is NVMe
+sudo dd if=build/media-server-install.iso of=/dev/sdX bs=4M status=progress oflag=sync
+```
+
+This downloads the stock Fedora CoreOS live ISO and embeds the Ignition config plus the install destination (`coreos-installer iso customize`), so booting the OptiPlex from the stick **wipes `DEST_DEVICE` unattended**, installs, ejects itself from the flow, and reboots into firstboot. Everything runs in containers; only podman is needed locally.
+
+**Option B — manual:** boot the plain Fedora CoreOS live ISO and run `coreos-installer install /dev/sda --ignition-file media-server.ign` by hand (fetch the `.ign` onto the live environment via scp/curl/second USB).
+
+Either way the box comes up as stock ucore with our storage layout, NFS mount unit, and firstboot autorebase unit already in place.
 
 ### 3. Firstboot autorebase
 
